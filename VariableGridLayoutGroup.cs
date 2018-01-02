@@ -25,7 +25,7 @@ namespace UnityEngine.UI
 		[SerializeField] protected Constraint m_Constraint = Constraint.FixedColumnCount;
 		public Constraint constraint { get { return m_Constraint; } set { SetProperty(ref m_Constraint, value); } }
 
-		[SerializeField] protected int m_ConstraintCount = 4;
+		[SerializeField] protected int m_ConstraintCount = 3;
 		public int constraintCount { get { return m_ConstraintCount; } set { SetProperty(ref m_ConstraintCount, Mathf.Max(1, value)); } }
 
 		[SerializeField] protected bool m_ChildForceExpandWidth = true;
@@ -52,9 +52,79 @@ namespace UnityEngine.UI
 		private int[,] cellIndexAtGridRef;
 		private int[] cellColumn;
 		private int[] cellRow;
-		private Vector2[,] cellPreferredSizes;
-		private float[] colPreferredWidths;
-		private float[] rowPreferredHeights;
+		private Vector2[] cellPreferredSizes;
+		private float[] columnWidths;
+		private float[] rowHeights;
+		private float totalColumnWidth;
+		private float totalRowHeight;
+
+		//------------------------------------------------------------------------------------------------------
+		public int GetCellIndexAtGridRef( int column, int row ) {
+			if (column >= 0 && column < columns && row >= 0 && row < rows)
+				return cellIndexAtGridRef [column, row];
+			else
+				return -1;
+		}
+
+		//------------------------------------------------------------------------------------------------------
+		public int GetCellColumn( int cellIndex ) {
+			if (cellIndex >= 0 && cellIndex < rectChildren.Count)
+				return cellColumn [cellIndex];
+			else
+				return -1;
+		}
+
+		//------------------------------------------------------------------------------------------------------
+		public int GetCellRow( int cellIndex ) {
+			if (cellIndex >= 0 && cellIndex < rectChildren.Count)
+				return cellRow [cellIndex];
+			else
+				return -1;
+		}
+
+		//------------------------------------------------------------------------------------------------------
+		public float GetColumnPositionWithinGrid( int column ) {
+
+			if (column <= 0 || column >= columns)
+				return 0;
+
+			float pos = 0;
+			for (int c = 0; c < column; c++) {
+				pos += GetColumnWidth (c) + spacing.x;
+			}
+			return pos;
+		}
+
+		//------------------------------------------------------------------------------------------------------
+		public float GetRowPositionWithinGrid( int row ) {
+
+			if (row <= 0 || row >= rows)
+				return 0;
+
+			float pos = 0;
+			for (int r = 0; r < row; r++) {
+				pos += GetRowHeight (r) + spacing.y;
+			}
+			return pos;
+		}
+
+		//------------------------------------------------------------------------------------------------------
+		public float GetColumnWidth( int column ) {
+
+			if (column < 0 || column >= columns)
+				return 0;
+
+			return columnWidths [column];
+		}
+
+		//------------------------------------------------------------------------------------------------------
+		public float GetRowHeight( int row ) {
+
+			if (row < 0 || row >= rows)
+				return 0;
+
+			return rowHeights [row];
+		}
 
 		//------------------------------------------------------------------------------------------------------
 		private void InitializeLayout() {
@@ -65,9 +135,16 @@ namespace UnityEngine.UI
 			cellIndexAtGridRef = new int[columns, rows];
 			cellColumn = new int[rectChildren.Count];
 			cellRow = new int[rectChildren.Count];
-			cellPreferredSizes = new Vector2[columns, rows];
-			colPreferredWidths = new float[rectChildren.Count];
-			rowPreferredHeights = new float[rectChildren.Count];
+			cellPreferredSizes = new Vector2[rectChildren.Count];
+			columnWidths = new float[columns];
+			rowHeights = new float[rows];
+			totalColumnWidth = 0;
+			totalRowHeight = 0;
+			for (int a = 0; a < columns; a++) {
+				for (int b = 0; b < rows; b++) {
+					cellIndexAtGridRef [a, b] = -1;
+				}
+			}
 
 			int cOrigin = 0;
 			int rOrigin = 0;
@@ -79,7 +156,7 @@ namespace UnityEngine.UI
 			}
 			if (startCorner == Corner.LowerLeft || startCorner == Corner.LowerRight) {
 				rOrigin = rows - 1;
-				rNext = -1
+				rNext = -1;
 			}
 			int c = cOrigin;
 			int r = rOrigin;
@@ -88,9 +165,9 @@ namespace UnityEngine.UI
 				cellIndexAtGridRef [c, r] = cell;
 				cellColumn [cell] = c;
 				cellRow [cell] = r;
-				cellPreferredSizes [c, r] = new Vector2 (LayoutUtility.GetPreferredWidth, LayoutUtility.GetPreferredHeight);
-				colPreferredWidths [c] = Mathf.Max (colPreferredWidths [c], cellPreferredSizes [c, r].x);
-				rowPreferredHeights [c] = Mathf.Max (rowPreferredHeights [c], cellPreferredSizes [c, r].y);
+				cellPreferredSizes [cell] = new Vector2 (LayoutUtility.GetPreferredWidth(rectChildren[cell]), LayoutUtility.GetPreferredHeight(rectChildren[cell]));
+				columnWidths [c] = Mathf.Max (columnWidths [c], cellPreferredSizes [cell].x);
+				rowHeights [r] = Mathf.Max (rowHeights [r], cellPreferredSizes [cell].y);
 
 				// next
 				if (startAxis == Axis.Horizontal) {
@@ -103,9 +180,16 @@ namespace UnityEngine.UI
 					r += rNext;
 					if (r < 0 || r >= rows) {
 						r = rOrigin;
-						c += rNext;
+						c += cNext;
 					}
 				}
+			}
+
+			for (int col = 0; col < columns; col++) {
+				totalColumnWidth += columnWidths[col];
+			}
+			for (int row = 0; row < rows; row++) {
+				totalRowHeight += rowHeights[row];
 			}
 		}
 
@@ -116,59 +200,28 @@ namespace UnityEngine.UI
 		{
 			base.CalculateLayoutInputHorizontal();
 
-			int columns = GetColumnCount ();
-			int rows = GetRowCount ();
-
-			// Calc it based on all cells in that column
-			// Cycle through all cells and store max values for column
-			colMinWidths = new float[columns];
-			colPreferredWidths = new float[columns];
-//			colFlexibleWidths = new float[columns];
-			for (int c = 0; c < columns; c++) {
-				colMinWidths [c] = 0;
-				colPreferredWidths [c] = 0;
-//				colFlexibleWidths [c] = 0;
-			}
-
-			for (int i = 0; i < rectChildren.Count; i++)
-			{
-				var child = rectChildren [i];
-				int col = GetCellColumn (i, columns, rows);
-				colMinWidths[col] = Mathf.Max (colMinWidths[col], LayoutUtility.GetMinWidth (child));
-				colPreferredWidths[col] = Mathf.Max (colPreferredWidths[col], LayoutUtility.GetPreferredWidth (child));
-//				colFlexibleWidths[col] = Mathf.Max (colFlexibleWidths[col], LayoutUtility.GetFlexibleWidth (child));
-			}
+			InitializeLayout ();
 
 			float totalMinWidth = padding.horizontal;
-			float totalPreferredWidth = padding.horizontal;
-//			float totalFlexibleWidth = 0;
-			for (int c = 0; c < columns; c++) {
-				totalMinWidth += colMinWidths [c] + spacing.x;
-				totalPreferredWidth += colPreferredWidths [c] + spacing.x;
-//				totalFlexibleWidth += colFlexibleWidths [c] + spacing.x;
-			}
-			totalMinWidth -= spacing.x;
-			totalPreferredWidth -= spacing.x;
-//			totalFlexibleWidth -= spacing.x;
+			float totalPreferredWidth = padding.horizontal + totalColumnWidth + spacing.x * (columns - 1);
 
 			SetLayoutInputForAxis (totalMinWidth, totalPreferredWidth, -1, 0);
 
-			float prefW = LayoutUtility.GetPreferredWidth (rectTransform);
-			float extraSpace = prefW - totalPreferredWidth;
-			// Stretch if there is a layout element specifying extra space
-			if (extraSpace > 0) {
-				// Give extra space equally
+			// Stretch if there is a layout element specifying extra space and child force expand width is on
+			float extraWidth = LayoutUtility.GetPreferredWidth (rectTransform) - totalPreferredWidth;
+			if (extraWidth > 0 && childForceExpandWidth) {
+
+				// Don't expand column if all cells in column override expansion to false
 				bool[] expandColumn = new bool[columns];
 				int columnsToExpand = 0;
-
 				for (int c = 0; c < columns; c++) {
 					expandColumn [c] = false;
 					for (int r = 0; r < rows; r++) {
-						int index = GetCellIndexAtGridRef (c, r, columns, rows);
+						int index = GetCellIndexAtGridRef (c, r);
 						if (index < rectChildren.Count) {
 							var child = rectChildren [index];
-							var cell = child.GetComponent<VGridCell> ();
-							if (cell == null || cell.doNotExpandWidth == false) {
+							var cellOptions = child.GetComponent<VariableGridCell> ();
+							if (cellOptions == null || !cellOptions.overrideForceExpandWidth || cellOptions.forceExpandWidth) {
 								expandColumn [c] = true;
 								columnsToExpand++;
 								break;
@@ -177,139 +230,56 @@ namespace UnityEngine.UI
 					}
 				}
 
+				// Give extra space equally - for future version could also make option to give extra space proportionally
 				for (int c = 0; c < columns; c++) {
 					if (expandColumn[c])
-						colPreferredWidths [c] += extraSpace / columnsToExpand;
-				}
-			}
-
-//			Debug.Log (string.Format ("min {0} pref {1}", LayoutUtility.GetMinWidth(rectTransform), LayoutUtility.GetPreferredWidth(rectTransform)));
-		}
-
-
-
-		//------------------------------------------------------------------------------------------------------
-		public int GetColumnCount() {
-			return m_Constraint == Constraint.FixedColumnCount ? Mathf.Min(m_ConstraintCount, rectChildren.Count) : Mathf.CeilToInt((float)rectChildren.Count / (float)m_ConstraintCount);
-		}
-
-		//------------------------------------------------------------------------------------------------------
-		public int GetRowCount() {
-			return m_Constraint == Constraint.FixedRowCount ? Mathf.Min(m_ConstraintCount, rectChildren.Count) : Mathf.CeilToInt((float)rectChildren.Count / (float)m_ConstraintCount);
-		}
-
-		//------------------------------------------------------------------------------------------------------
-		private int GetCellColumn(int cellIndex, int columns, int rows) {
-			// Depends on start axis and start corner
-			if (startCorner == Corner.UpperLeft || startCorner == Corner.LowerLeft) {
-				if (startAxis == Axis.Horizontal) {
-					return cellIndex % columns;
-				} else {
-					return Mathf.FloorToInt((float)cellIndex / (float)rows);
-				}
-			} else {
-				if (startAxis == Axis.Horizontal) {
-					return columns - 1 - (cellIndex % columns);
-				} else {
-					return columns - 1 - Mathf.FloorToInt((float)cellIndex / (float)rows);
+						columnWidths [c] += extraWidth / columnsToExpand;
 				}
 			}
 		}
 
-		//------------------------------------------------------------------------------------------------------
-		private int GetCellRow(int cellIndex, int columns, int rows) {
-			// Depends on start axis and start corner
-			if (startCorner == Corner.UpperLeft || startCorner == Corner.UpperRight) {
-				if (startAxis == Axis.Vertical) {
-					return cellIndex % rows;
-				} else {
-					return Mathf.FloorToInt((float)cellIndex / (float)columns);
-				}
-			} else {
-				if (startAxis == Axis.Vertical) {
-					return rows - 1 - (cellIndex % rows);
-				} else {
-					return rows - 1 - Mathf.FloorToInt((float)cellIndex / (float)columns);
-				}
-			}
-		}
 
-		//------------------------------------------------------------------------------------------------------
-		private int GetCellIndexAtGridRef( int x, int y, int columns, int rows ) {
-			// Depends on start axis and start corner
-			if (startCorner == Corner.UpperLeft) {
-				if (startAxis == Axis.Horizontal)
-					return y * columns + x;
-				else
-					return x * rows + y;
-				
-			} else if (startCorner == Corner.UpperRight) {
-				if (startAxis == Axis.Horizontal)
-					return y * columns + (columns - 1 - x);
-				else
-					return (columns - 1 - x) * rows + y;
-
-			} else if (startCorner == Corner.LowerLeft) {
-				if (startAxis == Axis.Horizontal)
-					return (rows - 1 - y) * columns + x;
-				else
-					return x * rows + (rows - 1 - y);
-
-			} else {
-				if (startAxis == Axis.Horizontal)
-					return (rows - 1 - y) * columns + (columns - 1 - x);
-				else
-					return (columns - 1 - x) * rows + (rows - 1 - y);
-			}
-		}
 
 		//------------------------------------------------------------------------------------------------------
 		public override void CalculateLayoutInputVertical()
 		{
-			int columns = GetColumnCount ();
-			int rows = GetRowCount ();
-
-			// Calc it based on all cells in that column
-			// Cycle through all cells and store max values for column
-			rowMinHeights = new float[rows];
-			rowPreferredHeights = new float[rows];
-//			rowFlexibleHeights = new float[rows];
-			for (int r = 0; r < rows; r++) {
-				rowMinHeights [r] = 0;
-				rowPreferredHeights [r] = 0;
-//				rowFlexibleHeights [r] = 0;
-			}
-
-			for (int i = 0; i < rectChildren.Count; i++)
-			{
-				var child = rectChildren [i];
-				int row = GetCellRow (i, columns, rows);
-				rowMinHeights[row] = Mathf.Max (rowMinHeights[row], LayoutUtility.GetMinHeight (child));
-				rowPreferredHeights[row] = Mathf.Max (rowPreferredHeights[row], LayoutUtility.GetPreferredHeight (child));
-//				rowFlexibleHeights[row] = Mathf.Max (rowFlexibleHeights[row], LayoutUtility.GetFlexibleHeight (child));
-			}
-
 			float totalMinHeight = padding.vertical;
-			float totalPreferredHeight = padding.vertical;
-			//			float totalFlexibleHeight = 0;
-			for (int r = 0; r < rows; r++) {
-				totalMinHeight += rowMinHeights [r] + spacing.y;
-				totalPreferredHeight += rowPreferredHeights [r] + spacing.y;
-				//				totalFlexibleHeight += rowFlexibleHeights [r] + spacing.y;
-			}
-			totalMinHeight -= spacing.y;
-			totalPreferredHeight -= spacing.y;
-			//			totalFlexibleHeight -= spacing.y;
+			float totalPreferredHeight = padding.vertical + totalRowHeight + spacing.y * (rows - 1);
 
 			SetLayoutInputForAxis (totalMinHeight, totalPreferredHeight, -1, 1);
 
-			float prefH = LayoutUtility.GetPreferredHeight (rectTransform);
-			float extraSpace = prefH - totalPreferredHeight;
-			// Stretch if there is a layout element specifying extra space
-			if (extraSpace > 0) {
+			// Stretch if there is a layout element specifying extra space and child force expand height is on
+			float extraHeight = LayoutUtility.GetPreferredHeight (rectTransform) - totalPreferredHeight;
+			if (extraHeight > 0 && childForceExpandHeight) {
+
+				// Don't expand column if all cells in column override expansion to false
+				bool[] expandRow = new bool[rows];
+				int rowsToExpand = 0;
+				for (int r = 0; r < rows; r++) {
+					expandRow [r] = false;
+					for (int c = 0; c < columns; c++) {
+						int index = GetCellIndexAtGridRef (c, r);
+						if (index >= 0 && index < rectChildren.Count) {
+							var child = rectChildren [index];
+							var cellOptions = child.GetComponent<VariableGridCell> ();
+							if (cellOptions == null || !cellOptions.overrideForceExpandHeight || cellOptions.forceExpandHeight) {
+								expandRow [r] = true;
+								rowsToExpand++;
+								break;
+							}
+						} else {
+							expandRow [r] = true;
+							rowsToExpand++;
+							break;
+						}
+					}
+				}
+					
 				// Give extra space equally
 				for (int r = 0; r < rows; r++) {
-					rowPreferredHeights [r] += extraSpace / rows;
+					if (expandRow [r]) {
+						rowHeights [r] += extraHeight / rowsToExpand;
+					}
 				}
 			}
 
@@ -321,56 +291,100 @@ namespace UnityEngine.UI
 			SetCellsAlongAxis(0);
 		}
 
+		//------------------------------------------------------------------------------------------------------
 		public override void SetLayoutVertical()
 		{
 			SetCellsAlongAxis(1);
 		}
 
+		//------------------------------------------------------------------------------------------------------
 		private void SetCellsAlongAxis(int axis)
 		{
-			int columns = GetColumnCount ();
-			int rows = GetRowCount ();
-			int units = axis == 0 ? columns : rows;
-
-			float[] size = new float[units];
-			float[] pos = new float[units];
-
 			// Get origin
-			float space = axis == 0 ? rectTransform.rect.width : rectTransform.rect.height;
+			float space = (axis == 0 ? rectTransform.rect.width : rectTransform.rect.height);
 			float extraSpace = space - LayoutUtility.GetPreferredSize (rectTransform, axis);
-			float origin = 0;
+
+			float gridOrigin = (axis == 0 ? padding.left : padding.top);
 			if (axis == 0) {
-				origin = padding.left;
 				if (childAlignment == TextAnchor.UpperCenter || childAlignment == TextAnchor.MiddleCenter || childAlignment == TextAnchor.LowerCenter) {
-					origin += extraSpace / 2f;
+					gridOrigin += extraSpace / 2f;
 				}
 				else if (childAlignment == TextAnchor.UpperRight || childAlignment == TextAnchor.MiddleRight || childAlignment == TextAnchor.LowerRight) {
-					origin += extraSpace;
+					gridOrigin += extraSpace;
 				}
 			} else {
-				origin = padding.top;
 				if (childAlignment == TextAnchor.MiddleLeft || childAlignment == TextAnchor.MiddleCenter || childAlignment == TextAnchor.MiddleRight) {
-					origin += extraSpace / 2f;
+					gridOrigin += extraSpace / 2f;
 				}
 				else if (childAlignment == TextAnchor.LowerLeft || childAlignment == TextAnchor.LowerCenter || childAlignment == TextAnchor.LowerRight) {
-					origin += extraSpace;
+					gridOrigin += extraSpace;
 				}
 			}
 
-			pos [0] = origin;
-			size[0] = axis == 0 ? colPreferredWidths [0] : rowPreferredHeights [0];
-			if (units > 1) {
-				for (int u = 1; u < units; u++) {
-					pos [u] = pos [u - 1] + size [u - 1] + (axis == 0 ? spacing.x : spacing.y);
-					size[u] = axis == 0 ? colPreferredWidths [u] : rowPreferredHeights [u];
-				}
+			// Expansion/alignment options
+			bool forceExpand = (axis == 0) ? childForceExpandWidth : childForceExpandHeight;
+			int alignment = 0;
+			if (axis == 0) {
+				if (cellAlignment == TextAnchor.UpperLeft || cellAlignment == TextAnchor.MiddleLeft || cellAlignment == TextAnchor.LowerLeft)
+					alignment = -1;
+				if (cellAlignment == TextAnchor.UpperRight || cellAlignment == TextAnchor.MiddleRight || cellAlignment == TextAnchor.LowerRight)
+					alignment = 1;
+			} else {
+				if (cellAlignment == TextAnchor.UpperLeft || cellAlignment == TextAnchor.UpperCenter || cellAlignment == TextAnchor.UpperRight)
+					alignment = -1;
+				if (cellAlignment == TextAnchor.LowerLeft || cellAlignment == TextAnchor.LowerCenter || cellAlignment == TextAnchor.LowerRight)
+					alignment = 1;
 			}
 
+			// Set cells
 			for (int i = 0; i < rectChildren.Count; i++) {
 
-				int index = axis == 0 ? GetCellColumn (i, columns, rows) : GetCellRow (i, columns, rows);
+				int colrow = (axis == 0 ? GetCellColumn (i) : GetCellRow (i));
 
-				SetChildAlongAxis (rectChildren [i], axis, pos[index], size[index]);
+				// Column/row origin
+				float cellOrigin = gridOrigin + (axis == 0 ? GetColumnPositionWithinGrid(colrow) : GetRowPositionWithinGrid(colrow));
+
+				// Column/row size and space
+				float cellSpace = (axis == 0 ? GetColumnWidth(colrow) : GetRowHeight(colrow));
+				var child = rectChildren[i];
+				float cellSize = LayoutUtility.GetPreferredSize(child,axis);
+				float cellExtraSpace = cellSpace - cellSize;
+
+				// If cell should stretch, place there. If not, place within cell space according to cell alignment and its preferred size
+				bool cellForceExpand = forceExpand;
+				int thisCellAlignment = alignment;
+				var cellOptions = child.GetComponent<VariableGridCell> ();
+				if (cellOptions != null) {
+					if (axis == 0 ? cellOptions.overrideForceExpandWidth : cellOptions.overrideForceExpandHeight)
+						cellForceExpand = (axis == 0 ? cellOptions.forceExpandWidth : cellOptions.forceExpandHeight);
+					if (cellOptions.overrideCellAlignment) {
+						if (axis == 0) {
+							if (cellOptions.cellAlignment == TextAnchor.UpperLeft || cellOptions.cellAlignment == TextAnchor.MiddleLeft || cellOptions.cellAlignment == TextAnchor.LowerLeft)
+								thisCellAlignment = -1;
+							else if (cellOptions.cellAlignment == TextAnchor.UpperCenter || cellOptions.cellAlignment == TextAnchor.MiddleCenter || cellOptions.cellAlignment == TextAnchor.LowerCenter)
+								thisCellAlignment = 0;
+							else
+								thisCellAlignment = 1;
+						} else {
+							if (cellOptions.cellAlignment == TextAnchor.UpperLeft || cellOptions.cellAlignment == TextAnchor.UpperCenter || cellOptions.cellAlignment == TextAnchor.UpperRight)
+								thisCellAlignment = -1;
+							else if (cellOptions.cellAlignment == TextAnchor.MiddleLeft || cellOptions.cellAlignment == TextAnchor.MiddleCenter || cellOptions.cellAlignment == TextAnchor.MiddleRight)
+								thisCellAlignment = 0;
+							else
+								thisCellAlignment = 1;
+						}
+					}
+				}
+				if (cellForceExpand) {
+					cellSize = cellSpace;
+				} else {
+					if (thisCellAlignment == 0)
+						cellOrigin += cellExtraSpace / 2f;
+					if (thisCellAlignment == 1)
+						cellOrigin += cellExtraSpace;
+				}
+
+				SetChildAlongAxis (rectChildren [i], axis, cellOrigin, cellSize);
 			}
 		}
 	}
