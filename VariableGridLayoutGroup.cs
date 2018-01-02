@@ -25,7 +25,7 @@ namespace UnityEngine.UI
 		[SerializeField] protected Constraint m_Constraint = Constraint.FixedColumnCount;
 		public Constraint constraint { get { return m_Constraint; } set { SetProperty(ref m_Constraint, value); } }
 
-		[SerializeField] protected int m_ConstraintCount = 4;
+		[SerializeField] protected int m_ConstraintCount = 3;
 		public int constraintCount { get { return m_ConstraintCount; } set { SetProperty(ref m_ConstraintCount, Mathf.Max(1, value)); } }
 
 		[SerializeField] protected bool m_ChildForceExpandWidth = true;
@@ -236,8 +236,6 @@ namespace UnityEngine.UI
 						columnWidths [c] += extraWidth / columnsToExpand;
 				}
 			}
-
-//			Debug.Log (string.Format ("min {0} pref {1}", LayoutUtility.GetMinWidth(rectTransform), LayoutUtility.GetPreferredWidth(rectTransform)));
 		}
 
 
@@ -302,14 +300,6 @@ namespace UnityEngine.UI
 		//------------------------------------------------------------------------------------------------------
 		private void SetCellsAlongAxis(int axis)
 		{
-			int units = (axis == 0 ? columns : rows);
-
-			float[] size = new float[units];
-			float[] pos = new float[units];
-
-//			float totalContentSize = (axis == 0 ? padding.horizontal + totalColumnWidth + spacing.x * (columns - 1) : padding.vertical + totalRowHeight + spacing.y * (rows - 1));
-//			float extraSpace = LayoutUtility.GetPreferredSize (rectTransform, axis) - totalContentSize;
-
 			// Get origin
 			float space = (axis == 0 ? rectTransform.rect.width : rectTransform.rect.height);
 			float extraSpace = space - LayoutUtility.GetPreferredSize (rectTransform, axis);
